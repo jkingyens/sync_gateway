@@ -7,4 +7,4 @@ ENV PATH /usr/local/go/bin:$PATH
 ADD . /opt/sync_gateway
 RUN cd /opt/sync_gateway && ./build.sh
 EXPOSE 4984 4985
-ENTRYPOINT ["/opt/sync_gateway/bin/sync_gateway", "-adminInterface=0.0.0.0:4985"]
+ENTRYPOINT ["/opt/sync_gateway/bin/sync_gateway", "/opt/config/config.json"]
