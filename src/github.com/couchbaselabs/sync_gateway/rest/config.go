@@ -18,8 +18,10 @@ import (
 	"net/url"
 	"os"
 	"runtime"
+	"strings"
 
 	"github.com/couchbaselabs/sync_gateway/base"
+	"github.com/couchbaselabs/sync_gateway/db"
 )
 
 // Register profiling handlers (see Go docs)
@@ -72,26 +74,14 @@ type DbConfig struct {
 	Bucket     *string                     `json:"bucket"`                // Bucket name on server; defaults to same as 'name'
 	Pool       *string                     `json:"pool"`                  // Couchbase pool name, default "default"
 	Sync       *string                     `json:"sync"`                  // Sync function defines which users can see which data
-	Users      map[string]*PrincipalConfig `json:"users,omitempty"`       // Initial user accounts
-	Roles      map[string]*PrincipalConfig `json:"roles,omitempty"`       // Initial roles
+	Users      map[string]*db.PrincipalConfig `json:"users,omitempty"`       // Initial user accounts
+	Roles      map[string]*db.PrincipalConfig `json:"roles,omitempty"`       // Initial roles
 	RevsLimit  *uint32                     `json:"revs_limit,omitempty"`  // Max depth a document's revision tree can grow to
 	ImportDocs interface{}                 `json:"import_docs,omitempty"` // false, true, or "continuous"
 	Shadow     *ShadowConfig               `json:"shadow,omitempty"`      // External bucket to shadow
 }
 
 type DbConfigMap map[string]*DbConfig
-
-// JSON object that defines a User/Role within a DbConfig. (Also used in admin REST API.)
-type PrincipalConfig struct {
-	Name              *string  `json:"name,omitempty"`
-	ExplicitChannels  base.Set `json:"admin_channels,omitempty"`
-	Channels          base.Set `json:"all_channels"`
-	Email             string   `json:"email,omitempty"`
-	Disabled          bool     `json:"disabled,omitempty"`
-	Password          *string  `json:"password,omitempty"`
-	ExplicitRoleNames []string `json:"admin_roles,omitempty"`
-	RoleNames         []string `json:"roles,omitempty"`
-}
 
 type PersonaConfig struct {
 	Origin   string // Canonical server URL for Persona authentication
@@ -151,8 +141,50 @@ func (shadowConfig *ShadowConfig) GetCredentials() (string, string) {
 	return shadowConfig.Username, shadowConfig.Password
 }
 
-// Reads a ServerConfig from a JSON file.
+// Reads a ServerConfig from raw data
+func ReadServerConfigFromData(data []byte) (*ServerConfig, error) {
+
+	data = base.ConvertBackQuotedStrings(data)
+	var config *ServerConfig
+	if err := json.Unmarshal(data, &config); err != nil {
+		return nil, err
+	}
+
+	// Validation:
+	for name, dbConfig := range config.Databases {
+		dbConfig.setup(name)
+	}
+	return config, nil
+}
+
+// Reads a ServerConfig from a URL.
+func ReadServerConfigFromUrl(url string) (*ServerConfig, error) {
+
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	responseBody, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	return ReadServerConfigFromData(responseBody)
+
+}
+
+// Reads a ServerConfig from either a JSON file or from a URL.
 func ReadServerConfig(path string) (*ServerConfig, error) {
+	if strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://") {
+		return ReadServerConfigFromUrl(path)
+	} else {
+		return ReadServerConfigFromFile(path)
+	}
+}
+
+// Reads a ServerConfig from a JSON file.
+func ReadServerConfigFromFile(path string) (*ServerConfig, error) {
+
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, err
@@ -300,7 +332,10 @@ func ParseCommandLine() *ServerConfig {
 	}
 
 	if *siteURL != "" {
-		config.Persona = &PersonaConfig{Origin: *siteURL}
+		if config.Persona == nil {
+			config.Persona = new(PersonaConfig)
+		}
+		config.Persona.Origin = *siteURL
 	}
 
 	base.LogKeys["HTTP"] = true

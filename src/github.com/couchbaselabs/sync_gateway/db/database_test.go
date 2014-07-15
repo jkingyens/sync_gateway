@@ -267,7 +267,7 @@ func TestAllDocs(t *testing.T) {
 		if i >= 23 {
 			seq++
 		}
-		assert.Equals(t, change.Seq, uint64(seq))
+		assert.Equals(t, change.Seq, SequenceID{Seq: uint64(seq)})
 		assert.Equals(t, change.Deleted, i == 99)
 		var removed base.Set
 		if i == 99 {
@@ -281,12 +281,68 @@ func TestAllDocs(t *testing.T) {
 	assertNoError(t, err, "Couldn't GetChanges")
 	assert.Equals(t, len(changes), 10)
 	for i, change := range changes {
-		assert.Equals(t, change.Seq, uint64(10*i+1))
+		assert.Equals(t, change.Seq, SequenceID{Seq: uint64(10*i + 1)})
 		assert.Equals(t, change.ID, ids[10*i].DocID)
 		assert.Equals(t, change.Deleted, false)
 		assert.DeepEquals(t, change.Removed, base.Set(nil))
 		assert.Equals(t, change.Doc["serialnumber"], int64(10*i))
 	}
+}
+
+// Unit test for bug #314
+func TestChangesAfterChannelAdded(t *testing.T) {
+	base.LogKeys["Cache"] = true
+	base.LogKeys["Changes"] = true
+	base.LogKeys["Changes+"] = true
+	db := setupTestDB(t)
+	defer tearDownTestDB(t, db)
+	db.ChannelMapper = channels.NewDefaultChannelMapper()
+
+	// Create a user with access to channel ABC
+	authenticator := db.Authenticator()
+	user, _ := authenticator.NewUser("naomi", "letmein", channels.SetOf("ABC"))
+	authenticator.Save(user)
+
+	// Create a doc on two channels (sequence 1):
+	revid, _ := db.Put("doc1", Body{"channels": []string{"ABC", "PBS"}})
+
+	// Modify user to have access to both channels (sequence 2):
+	userInfo, err := db.GetPrincipal("naomi", true)
+	assert.True(t, userInfo != nil)
+	userInfo.ExplicitChannels = base.SetOf("ABC", "PBS")
+	_, err = db.UpdatePrincipal(*userInfo, true, true)
+	assertNoError(t, err, "UpdatePrincipal failed")
+
+	// Check the _changes feed:
+	db.changeCache.waitForSequence(1)
+	db.user, _ = authenticator.GetUser("naomi")
+	changes, err := db.GetChanges(base.SetOf("*"), ChangesOptions{Since: SequenceID{Seq: 1}})
+	assertNoError(t, err, "Couldn't GetChanges")
+
+	assert.Equals(t, len(changes), 2)
+	assert.DeepEquals(t, changes[0], &ChangeEntry{
+		Seq:     SequenceID{Seq: 1, TriggeredBy: 2},
+		ID:      "doc1",
+		Changes: []ChangeRev{{"rev": revid}}})
+	assert.DeepEquals(t, changes[1], &ChangeEntry{
+		Seq:     SequenceID{Seq: 2},
+		ID:      "_user/naomi",
+		Changes: []ChangeRev{}})
+
+	// Add a new doc (sequence 3):
+	revid, _ = db.Put("doc2", Body{"channels": []string{"PBS"}})
+
+	// Check the _changes feed -- this is to make sure the changeCache properly received
+	// sequence 2 (the user doc) and isn't stuck waiting for it.
+	db.changeCache.waitForSequence(3)
+	changes, err = db.GetChanges(base.SetOf("*"), ChangesOptions{Since: SequenceID{Seq: 2}})
+	assertNoError(t, err, "Couldn't GetChanges (2nd)")
+
+	assert.Equals(t, len(changes), 1)
+	assert.DeepEquals(t, changes[0], &ChangeEntry{
+		Seq:     SequenceID{Seq: 3},
+		ID:      "doc2",
+		Changes: []ChangeRev{{"rev": revid}}})
 }
 
 func TestConflicts(t *testing.T) {
@@ -347,7 +403,7 @@ func TestConflicts(t *testing.T) {
 	assertNoError(t, err, "Couldn't GetChanges")
 	assert.Equals(t, len(changes), 1)
 	assert.DeepEquals(t, changes[0], &ChangeEntry{
-		Seq:      3,
+		Seq:      SequenceID{Seq: 3},
 		ID:       "doc",
 		Changes:  []ChangeRev{{"rev": "2-b"}, {"rev": "2-a"}},
 		branched: true})
@@ -372,7 +428,7 @@ func TestConflicts(t *testing.T) {
 	assertNoError(t, err, "Couldn't GetChanges")
 	assert.Equals(t, len(changes), 1)
 	assert.DeepEquals(t, changes[0], &ChangeEntry{
-		Seq:      4,
+		Seq:      SequenceID{Seq: 4},
 		ID:       "doc",
 		Changes:  []ChangeRev{{"rev": "2-a"}, {"rev": rev3}},
 		branched: true})
