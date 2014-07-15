@@ -9,3 +9,4 @@ ADD . /opt/sync_gateway
 RUN cd /opt/sync_gateway && ./build.sh
 EXPOSE 4984 4985
 ENTRYPOINT ["/opt/sync_gateway/bin/sync_gateway", "/opt/config/config.json"]
+CMD []
