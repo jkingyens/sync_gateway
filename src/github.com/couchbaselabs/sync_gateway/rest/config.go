@@ -12,7 +12,6 @@ package rest
 import (
 	"encoding/json"
 	"flag"
-	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/url"
@@ -204,17 +203,50 @@ func (self *ServerConfig) MergeWith(other *ServerConfig) error {
 	if other.Pretty {
 		self.Pretty = true
 	}
+
 	for name, db := range other.Databases {
 		if self.Databases[name] != nil {
-			return fmt.Errorf("Database %q already specified earlier", name)
+
+			if self.Databases[name].name == "" && db.name != "" {
+				self.Databases[name].name = db.name
+			}
+
+			if self.Databases[name].Server == nil && db.Server != nil {
+				self.Databases[name].Server = db.Server
+			}
+
+			if self.Databases[name].Username == "" && db.Username != "" {
+				self.Databases[name].Username = db.Username
+			}
+
+			if self.Databases[name].Password == "" && db.Password != "" {
+				self.Databases[name].Password = db.Password
+			}
+
+			if self.Databases[name].Bucket == nil && db.Bucket != nil {
+				self.Databases[name].Bucket = db.Bucket
+			}
+
+			if self.Databases[name].Pool == nil && db.Pool != nil {
+				self.Databases[name].Pool = db.Pool
+			}
+
+			if self.Databases[name].Sync == nil && db.Sync != nil {
+				self.Databases[name].Sync = db.Sync
+			}
+
+		} else {
+
+			self.Databases[name] = db
+
 		}
-		self.Databases[name] = db
 	}
 	return nil
 }
 
 // Reads the command line flags and the optional config file.
 func ParseCommandLine() *ServerConfig {
+
 	siteURL := flag.String("personaOrigin", "", "Base URL that clients use to connect to the server")
 	addr := flag.String("interface", DefaultInterface, "Address to bind to")
 	authAddr := flag.String("adminInterface", DefaultAdminInterface, "Address to bind admin interface to")
@@ -231,6 +263,25 @@ func ParseCommandLine() *ServerConfig {
 	flag.Parse()
 
 	var config *ServerConfig
+
+	// create a default config
+	if *dbName == "" {
+		*dbName = *bucketName
+	}
+	config = &ServerConfig {
+		Interface:        addr,
+		AdminInterface:   authAddr,
+		ProfileInterface: profAddr,
+		Pretty:           *pretty,
+		Databases: map[string]*DbConfig{
+			*dbName: {
+				name:   *dbName,
+				Server: couchbaseURL,
+				Bucket: bucketName,
+				Pool:   poolName,
+			},
+		},
+	}
 
 	if flag.NArg() > 0 {
 		// Read the configuration file(s), if any:
@@ -278,25 +329,6 @@ func ParseCommandLine() *ServerConfig {
 			config.AdminInterface = &DefaultAdminInterface
 		}
 
-	} else {
-		// If no config file is given, create a default config, filled in from command line flags:
-		if *dbName == "" {
-			*dbName = *bucketName
-		}
-		config = &ServerConfig{
-			Interface:        addr,
-			AdminInterface:   authAddr,
-			ProfileInterface: profAddr,
-			Pretty:           *pretty,
-			Databases: map[string]*DbConfig{
-				*dbName: {
-					name:   *dbName,
-					Server: couchbaseURL,
-					Bucket: bucketName,
-					Pool:   poolName,
-				},
-			},
-		}
 	}
 
 	if *siteURL != "" {

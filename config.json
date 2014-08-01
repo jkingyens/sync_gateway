@@ -1,0 +1,10 @@
+{
+   "interface":"0.0.0.0:4984",
+   "adminInterface":"0.0.0.0:4985",
+   "log":["REST"],
+   "databases":{
+      "my-new-database": {
+         "bucket":"sync-gateway"
+      }
+   }
+}
