@@ -284,6 +284,7 @@ func ParseCommandLine() *ServerConfig {
 	}
 
 	if flag.NArg() > 0 {
+
 		// Read the configuration file(s), if any:
 		for i := 0; i < flag.NArg(); i++ {
 			filename := flag.Arg(i)

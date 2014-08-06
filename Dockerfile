@@ -9,4 +9,4 @@ ADD . /opt/sync_gateway
 RUN cd /opt/sync_gateway && ./build.sh
 EXPOSE 4984 4985
 WORKDIR /opt/sync_gateway/bin
-CMD /opt/sync_gateway/bin/sync_gateway -interface=0.0.0.0:4984 -adminInterface=0.0.0.0:4985 -dbname=my-new-database -url=http://$CB_PORT_3000_TCP_ADDR:$CB_PORT_3000_TCP_PORT /opt/config/config.json
+CMD /opt/sync_gateway/bin/sync_gateway -interface=0.0.0.0:4984 -adminInterface=0.0.0.0:4985 -bucket=$BUCKET_NAME -dbname=$DB_NAME -url=http://$CB_PORT_3000_TCP_ADDR:$CB_PORT_3000_TCP_PORT /opt/config/config.json
